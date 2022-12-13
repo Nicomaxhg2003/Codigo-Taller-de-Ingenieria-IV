@@ -1,59 +1,78 @@
+'''
+Entrega final de taller de ingenieria IV, esta es una aplicación para aumentar cualquier tipo de formato de video (mp4, wav, avi, gif, etc)
+utilizando sistema de marcadores ARUCO utilizando la libreria OpenCV, para comenzar a utilizar la apliación debemos intalar la libreria
+desde la pagina oficial.
+
+Integrantes: Nicolás Henriquez y Carlos Subiabre, 2do año de Ingenieria Civil Informatica.
+'''
+
 import cv2 as cv
 from cv2 import aruco
 import numpy as np
-import os
+
+id_marker = 1 # Definimos el marcador en el cual haremos la aumentación
+
+# Funcion para aumentar la imagén
+def augmentation(bbox, img, img_augment):
+    top_left = bbox[0][0][0], bbox[0][0][1]
+    top_right = bbox[0][1][0], bbox[0][1][1]
+    bottom_right = bbox[0][2][0], bbox[0][2][1]
+    bottom_left = bbox[0][3][0], bbox[0][3][1]
+# Obtenemos las esquinas de los marcadores Aruco y las designamos
+    height, width, _, = img_augment.shape
+
+    points_1 = np.array([top_left, top_right, bottom_right, bottom_left])
+    points_2 = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
+# Apuntamos a las esquinas dejandolas ordanas de forma matricial
+    matrix, _ = cv.findHomography(points_2, points_1)
+    image_out = cv.warpPerspective(img_augment, matrix, (img.shape[1], img.shape[0]))
+    cv.fillConvexPoly(img, points_1.astype(int), (0, 0, 0))
+    image_out = img + image_out
+    return image_out
+# Retornamos la Imagen de salida (camara)
+aruco_dict = aruco.Dictionary_get(aruco.DICT_4X4_50)
+parameters = aruco.DetectorParameters_create()
+# Definimos los marcadores y el como los usaremos
+video = cv.VideoCapture(r"C:\Users\nicom\Desktop\AUMENTACIONFINAL\VIDEO\video.mp4") # Aquí leemos el archivo, debemos obtener la ruta en la que se encuentra
+
+deteccion = True # Deteccion de los marcadores
+frame_count = 0 # Cantidad de Frames Per Second que leemos, los cuales aumentaremos luego
+
+height_marker, width_marker = 1000, 1000 # Ajustando la resolución de salida, mientras mayor, mejor se verá la imagen
+ret, image_video = video.read() # Leemos el archivo de video y lo ajustamos a 2 variables
+image_video = cv.resize(image_video, (width_marker, height_marker)) # Reajustamos el video para que coincida con el ajuste previo
 
 
-def image_augmentation(frame, src_image, dst_points):
-    src_h, src_w = src_image.shape[:2]
-    frame_h, frame_w = frame.shape[:2]
-    mask = np.zeros((frame_h, frame_w), dtype=np.uint8)
-    src_points = np.array([[0, 0], [src_w, 0], [src_w, src_h], [0, src_w]])
-    H, _ = cv.findHomography(srcPoints=src_points, dstPoints=dst_points)
-    warp_image = cv.warpPerspective(src_image, H, (frame_w, frame_h))
-    cv.imshow("warp image", warp_image)
-    cv.fillConvexPoly(mask, dst_points, 255)
-    results = cv.bitwise_and(warp_image, warp_image, frame, mask=mask)
+cap = cv.VideoCapture(0) # Comenzamos a operar con la camara
 
-
-def read_images(dir_path):
-    img_list = []
-    files = os.listdir(dir_path)
-    for file in files:
-        img_path = os.path.join(dir_path, file)
-        image = cv.imread(img_path)
-        img_list.append(image)
-    return img_list
-
-
-marker_dict = aruco.Dictionary_get(aruco.DICT_4X4_50)
-
-param_markers = aruco.DetectorParameters_create()
-
-images_list = read_images(r"...\AR")
-
-cap = cv.VideoCapture(0)
-
-while True:
+# Loop para comenzar a leer el video, procesandolo encima del marcador
+while (cap.isOpened()):
     ret, frame = cap.read()
-    if not ret:
-        break
-    gray_frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-    marker_corners, marker_IDs, reject = aruco.detectMarkers(
-        gray_frame, marker_dict, parameters = param_markers
-    )
-    if marker_corners:
-        for ids, corners in zip(marker_IDs, marker_corners):
+    if deteccion == False:
+        video.set(cv.CAP_PROP_POS_FRAMES, 0)
+        frame_count = 0
+    # Detectamos si el archivo corresponde a la ruta, si no existe solo mostraremos una imagen en blanco
+    # Ya que no aun no tenemos frames para leer
+    else:
+        if frame_count == video.get(cv.CAP_PROP_FRAME_COUNT):
+            video.set(cv.CAP_PROP_POS_FRAMES, 0)
+            frame_count = 0
+        ret, image_video = video.read()
+        image_video = cv.resize(image_video, (width_marker, height_marker))
+    # Si se encontró el archivo, aumentaremos la cantidad de frames que encontremos y comenzaremos a ajustar el video
+    # Para ajustardo de acuerdo a los previo ya personalizado
+    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
-            corners = corners.reshape(4, 2)
-            corners = corners.astype(int)
-            if ids[0] <= 12:
-                image_augmentation(frame, images_list[ids[0]], corners)
-            else:
-                image_augmentation(frame, images_list[0], corners)
-    cv.imshow("frame", frame)
-    key = cv.waitKey(1)
-    if key == ord("q"):
+    corners, ids, rejected = aruco.detectMarkers(image = gray, dictionary = aruco_dict, parameters = parameters)
+    # Aqui comenzamos a buscar los marcadores y los volvemos a detectar
+    if ids is not None and ids[0] == id_marker:
+        detection = True
+        frame = augmentation(np.array(corners)[0], frame, image_video)
+    # Si la detección y todos los ajusten funcionaron, solo debemos superponer el video ajustado
+    # Encima de los marcadores
+    cv.imshow('input', frame)
+    if cv.waitKey(1) & 0xFF == 27:
         break
-cap.release()
+    frame_count += 1
+    # Termianmos el loop
 cv.destroyAllWindows()
